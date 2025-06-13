@@ -369,6 +369,23 @@ python -m app.main_distributed \
   --account my_account --qos=my_qos
 ```
 
+### TensorDataset Example
+
+Use the `tensordataset` option to pretrain on frames stored as tensors.
+The [configs/train/tensor64x128.yaml](configs/train/tensor64x128.yaml) configuration uses 64x128 crops. Launch locally with:
+```bash
+python -m app.main --fname configs/train/tensor64x128.yaml 
+  --devices cuda:0
+```
+for distributed training:
+```bash
+python -m app.main_distributed 
+  --fname configs/train/tensor64x128.yaml 
+  --time 6000 
+  --account my_account --qos=my_qos
+```
+
+
 ### Postraining
 
 Post-training of the action-conditioned model, starting from the pretrained VJEPA 2 backbone, also follows a similar interface, and can be run locally or distributed using [this config](configs/train/vitg16/droid-256px-8f.yaml).

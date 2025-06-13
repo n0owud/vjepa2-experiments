@@ -1,0 +1,53 @@
+app: vjepa
+nodes: 1
+tasks_per_node: 1
+cpus_per_task: 4
+mem_per_gpu: 32G
+folder: /your_folder/tensor64x128
+
+data:
+  dataset_type: tensordataset
+  datasets:
+    - /your_tensor_dataset/path.csv
+  batch_size: 32
+  crop_size: [64, 128]
+  patch_size: 16
+  dataset_fpcs:
+    - 1
+  tubelet_size: 2
+  fps: 4
+  num_workers: 4
+  pin_mem: true
+
+data_aug:
+  auto_augment: false
+  motion_shift: false
+  random_resize_aspect_ratio:
+    - 0.75
+    - 1.35
+  random_resize_scale:
+    - 0.3
+    - 1.0
+  reprob: 0.0
+
+loss:
+  loss_exp: 1.0
+meta:
+  dtype: bfloat16
+  eval_freq: 100
+  save_every_freq: 25
+  seed: 239
+  use_sdpa: true
+model:
+  model_name: vit_giant_xformers
+  pred_depth: 12
+  pred_embed_dim: 384
+  pred_num_heads: 12
+  uniform_power: true
+  use_activation_checkpointing: true
+  use_rope: true
+optimization:
+  epochs: 10
+  lr: 0.0001
+  weight_decay: 0.04
+  warmup: 5
