@@ -1,0 +1,6 @@
+app: vjepa
+# Example configuration demonstrating tuple crop size
+# Only relevant fields are included
+
+data:
+  crop_size: [64, 128]

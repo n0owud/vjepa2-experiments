@@ -156,6 +156,9 @@ def init_video_model(
     wide_silu=False,
     use_activation_checkpointing=False,
 ):
+    if isinstance(crop_size, list):
+        crop_size = tuple(crop_size)
+
     encoder = video_vit.__dict__[model_name](
         img_size=crop_size,
         patch_size=patch_size,

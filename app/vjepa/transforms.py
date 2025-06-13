@@ -5,6 +5,7 @@
 
 import torch
 import torchvision.transforms as transforms
+from typing import Sequence
 
 import src.datasets.utils.video.transforms as video_transforms
 from src.datasets.utils.video.randerase import RandomErasing
@@ -20,6 +21,9 @@ def make_transforms(
     crop_size=224,
     normalize=((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
 ):
+
+    if isinstance(crop_size, Sequence) and not isinstance(crop_size, str):
+        crop_size = tuple(crop_size)
 
     _frames_augmentation = VideoTransform(
         random_horizontal_flip=random_horizontal_flip,
@@ -53,6 +57,8 @@ class VideoTransform(object):
         self.random_resize_scale = random_resize_scale
         self.auto_augment = auto_augment
         self.motion_shift = motion_shift
+        if isinstance(crop_size, Sequence) and not isinstance(crop_size, str):
+            crop_size = tuple(crop_size)
         self.crop_size = crop_size
         self.mean = torch.tensor(normalize[0], dtype=torch.float32)
         self.std = torch.tensor(normalize[1], dtype=torch.float32)
@@ -61,16 +67,20 @@ class VideoTransform(object):
             self.mean *= 255.0
             self.std *= 255.0
 
+        input_size = crop_size if isinstance(crop_size, tuple) else (crop_size, crop_size)
         self.autoaug_transform = video_transforms.create_random_augment(
-            input_size=(crop_size, crop_size),
+            input_size=input_size,
             # auto_augment="rand-m4-n4-w1-mstd0.5-inc1",
             auto_augment="rand-m7-n4-mstd0.5-inc1",
             interpolation="bicubic",
         )
 
-        self.spatial_transform = (
-            video_transforms.random_resized_crop_with_shift if motion_shift else video_transforms.random_resized_crop
-        )
+        if isinstance(crop_size, tuple):
+            self.spatial_transform = video_transforms.CenterCrop(crop_size)
+        else:
+            self.spatial_transform = (
+                video_transforms.random_resized_crop_with_shift if motion_shift else video_transforms.random_resized_crop
+            )
 
         self.reprob = reprob
         self.erase_transform = RandomErasing(
@@ -97,13 +107,16 @@ class VideoTransform(object):
 
         buffer = buffer.permute(3, 0, 1, 2)  # T H W C -> C T H W
 
-        buffer = self.spatial_transform(
-            images=buffer,
-            target_height=self.crop_size,
-            target_width=self.crop_size,
-            scale=self.random_resize_scale,
-            ratio=self.random_resize_aspect_ratio,
-        )
+        if isinstance(self.crop_size, tuple):
+            buffer = self.spatial_transform(buffer)
+        else:
+            buffer = self.spatial_transform(
+                images=buffer,
+                target_height=self.crop_size,
+                target_width=self.crop_size,
+                scale=self.random_resize_scale,
+                ratio=self.random_resize_aspect_ratio,
+            )
         if self.random_horizontal_flip:
             buffer, _ = video_transforms.horizontal_flip(0.5, buffer)
 
