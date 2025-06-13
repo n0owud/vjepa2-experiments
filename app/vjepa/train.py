@@ -29,7 +29,7 @@ from torch.nn.parallel import DistributedDataParallel
 from app.vjepa.transforms import make_transforms
 from app.vjepa.utils import init_opt, init_video_model, load_checkpoint
 from src.datasets.data_manager import init_data
-from src.masks.multiseq_multiblock3d import MaskCollator
+from src.masks.multiseq_multiblock3d import TensorMaskCollator
 from src.masks.utils import apply_masks
 from src.utils.distributed import init_distributed
 from src.utils.logging import AverageMeter, CSVLogger, get_logger, gpu_timer
@@ -216,7 +216,7 @@ def main(args, resume_preempt=False):
         target_encoder.compile()
         predictor.compile()
 
-    mask_collator = MaskCollator(
+    mask_collator = TensorMaskCollator(
         cfgs_mask=cfgs_mask,
         dataset_fpcs=dataset_fpcs,
         crop_size=crop_size,
@@ -250,6 +250,8 @@ def main(args, resume_preempt=False):
         num_workers=num_workers,
         pin_mem=pin_mem,
         log_dir=None,
+        patch_size=patch_size,
+        tubelet_size=tubelet_size,
     )
     try:
         _dlen = len(unsupervised_loader)
@@ -387,7 +389,7 @@ def main(args, resume_preempt=False):
                         raise e
 
             for _fpc_sample in sample:
-                bs, fpc = _fpc_sample[0][-1][0].size()
+                bs, fpc = _fpc_sample[0][2][0].size()
                 mask_meters[fpc].update(bs / batch_size)
 
             def load_clips():
