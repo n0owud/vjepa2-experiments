@@ -76,6 +76,37 @@ class MaskCollator(object):
         return fpc_collations
 
 
+class TensorMaskCollator(MaskCollator):
+    """Mask collator that respects valid patch indices from the dataset."""
+
+    def __call__(self, batch):
+        filtered_batches = {fpc: [] for fpc in self.mask_generators}
+        for sample in batch:
+            fpc = len(sample[2][-1])
+            filtered_batches[fpc].append(sample)
+
+        fpc_collations = []
+        for fpc in filtered_batches:
+            fpc_batch = filtered_batches[fpc]
+            batch_size = len(fpc_batch)
+            if batch_size == 0:
+                continue
+            clips = torch.utils.data.default_collate([s[0] for s in fpc_batch])
+            labels = torch.utils.data.default_collate([s[1] for s in fpc_batch])
+            clip_indices = torch.utils.data.default_collate([s[2] for s in fpc_batch])
+            valid_patch_indices = [s[3][0] for s in fpc_batch]
+            collated_batch = (clips, labels, clip_indices, [v for v in valid_patch_indices])
+
+            collated_masks_pred, collated_masks_enc = [], []
+            for mask_generator in self.mask_generators[fpc]:
+                masks_enc, masks_pred = mask_generator(batch_size, valid_patch_indices)
+                collated_masks_enc.append(masks_enc)
+                collated_masks_pred.append(masks_pred)
+            fpc_collations.append((collated_batch, collated_masks_enc, collated_masks_pred))
+
+        return fpc_collations
+
+
 class _MaskGenerator(object):
 
     def __init__(
@@ -169,7 +200,7 @@ class _MaskGenerator(object):
         # --
         return mask
 
-    def __call__(self, batch_size):
+    def __call__(self, batch_size, valid_patch_indices=None):
         """
         Create encoder and predictor masks when collating imgs into a batch
         # 1. sample pred block size using seed
@@ -188,7 +219,10 @@ class _MaskGenerator(object):
 
         collated_masks_pred, collated_masks_enc = [], []
         min_keep_enc = min_keep_pred = self.duration * self.height * self.width
-        for _ in range(batch_size):
+        if valid_patch_indices is None:
+            valid_patch_indices = [None] * batch_size
+
+        for v_indices in valid_patch_indices:
 
             empty_context = True
             while empty_context:
@@ -200,6 +234,11 @@ class _MaskGenerator(object):
 
                 mask_p = torch.argwhere(mask_e == 0).squeeze()
                 mask_e = torch.nonzero(mask_e).squeeze()
+
+                if v_indices is not None:
+                    vset = set(v_indices.tolist())
+                    mask_p = torch.tensor(sorted(set(mask_p.tolist()) & vset), dtype=mask_p.dtype)
+                    mask_e = torch.tensor(sorted(set(mask_e.tolist()) & vset), dtype=mask_e.dtype)
 
                 empty_context = len(mask_e) == 0
                 if not empty_context:

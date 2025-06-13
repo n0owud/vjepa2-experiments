@@ -22,6 +22,19 @@ _GLOBAL_SEED = 0
 logger = getLogger()
 
 
+def _compute_valid_patch_indices(clip, patch_size, tubelet_size, tol=1e-6):
+    """Return indices of non-zero patches in a clip tensor."""
+    C, T, H, W = clip.shape
+    d = T // tubelet_size
+    h = H // patch_size
+    w = W // patch_size
+    clip = clip.view(C, d, tubelet_size, h, patch_size, w, patch_size)
+    patch_flat = clip.permute(1, 3, 5, 0, 2, 4, 6).reshape(d, h, w, -1)
+    var = patch_flat.var(dim=3, unbiased=False)
+    mask = var > tol
+    return torch.nonzero(mask.view(-1), as_tuple=False).squeeze(1).to(torch.int64)
+
+
 def make_videodataset(
     data_paths,
     batch_size,
@@ -47,6 +60,8 @@ def make_videodataset(
     persistent_workers=True,
     deterministic=True,
     log_dir=None,
+    patch_size=16,
+    tubelet_size=2,
 ):
     dataset = VideoDataset(
         data_paths=data_paths,
@@ -63,6 +78,8 @@ def make_videodataset(
         filter_long_videos=filter_long_videos,
         shared_transform=shared_transform,
         transform=transform,
+        patch_size=patch_size,
+        tubelet_size=tubelet_size,
     )
 
     log_dir = pathlib.Path(log_dir) if log_dir else None
@@ -131,6 +148,8 @@ class VideoDataset(torch.utils.data.Dataset):
         filter_short_videos=False,
         filter_long_videos=int(10**9),
         duration=None,  # duration in seconds
+        patch_size=16,
+        tubelet_size=2,
     ):
         self.data_paths = data_paths
         self.datasets_weights = datasets_weights
@@ -144,6 +163,8 @@ class VideoDataset(torch.utils.data.Dataset):
         self.filter_long_videos = filter_long_videos
         self.duration = duration
         self.fps = fps
+        self.patch_size = patch_size
+        self.tubelet_size = tubelet_size
 
         if sum([v is not None for v in (fps, duration, frame_step)]) != 1:
             raise ValueError(f"Must specify exactly one of either {fps=}, {duration=}, or {frame_step=}.")
@@ -240,10 +261,16 @@ class VideoDataset(torch.utils.data.Dataset):
         if self.shared_transform is not None:
             buffer = self.shared_transform(buffer)
         buffer = split_into_clips(buffer)
+        valid_patch_indices = []
         if self.transform is not None:
             buffer = [self.transform(clip) for clip in buffer]
 
-        return buffer, label, clip_indices
+        for clip in buffer:
+            valid_patch_indices.append(
+                _compute_valid_patch_indices(clip, self.patch_size, self.tubelet_size)
+            )
+
+        return buffer, label, clip_indices, valid_patch_indices
 
     def get_item_image(self, index):
         sample = self.samples[index]
@@ -265,10 +292,16 @@ class VideoDataset(torch.utils.data.Dataset):
             # Technically we can have only transform, doing this just for the sake of consistency with videos.
             buffer = self.shared_transform(buffer)
 
+        valid_patch_indices = []
         if self.transform is not None:
             buffer = [self.transform(buffer)]
 
-        return buffer, label, clip_indices
+        for clip in buffer:
+            valid_patch_indices.append(
+                _compute_valid_patch_indices(clip, self.patch_size, self.tubelet_size)
+            )
+
+        return buffer, label, clip_indices, valid_patch_indices
 
     def loadvideo_decord(self, sample, fpc):
         """Load video content using Decord"""
